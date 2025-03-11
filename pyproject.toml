@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 dependencies = [
+    "expecttest>=0.3.0",
     "mcp[cli]>=1.2.0",
     "ruff>=0.9.10",
     "toml>=0.10.2",
