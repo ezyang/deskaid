@@ -1,12 +1,17 @@
 #!/bin/bash
 set -e
 
-# Format code using Ruff
-echo "Running Ruff formatter..."
-python -m ruff format codemcp/ test/
+# Get the directory where the script is located
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-# Run Ruff linting (optional)
+# Run Ruff linting
 echo "Running Ruff linter..."
-python -m ruff check --fix --select I codemcp/ test/
 
-echo "Lint and format completed successfully!"
+UNSAFE_CODES="F401,F841,I"
+
+"${SCRIPT_DIR}/.venv/bin/python" -m ruff check --ignore "$UNSAFE_CODES" --fix codemcp/ test/
+
+# Less safe autofixes
+"${SCRIPT_DIR}/.venv/bin/python" -m ruff check --select "$UNSAFE_CODES" --unsafe-fixes --fix codemcp/ test/
+
+echo "Lint completed successfully!"

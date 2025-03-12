@@ -1,10 +1,21 @@
 #!/usr/bin/env python3
 
+import logging
 import os
-from pathlib import Path
-from typing import List, Optional
 
+from ..access import check_edit_permission
 from ..common import normalize_file_path
+from ..git import is_git_repository
+
+__all__ = [
+    "ls_directory",
+    "list_directory",
+    "skip",
+    "TreeNode",
+    "create_file_tree",
+    "print_tree",
+    "MAX_FILES",
+]
 
 MAX_FILES = 1000
 TRUNCATED_MESSAGE = f"There are more than {MAX_FILES} files in the directory. Use more specific paths to explore nested directories. The first {MAX_FILES} files and directories are included below:\n\n"
@@ -18,6 +29,7 @@ def ls_directory(directory_path: str) -> str:
 
     Returns:
         A formatted string representation of the directory contents, or an error message
+
     """
     try:
         # Normalize the directory path
@@ -30,6 +42,15 @@ def ls_directory(directory_path: str) -> str:
         if not os.path.isdir(full_directory_path):
             return f"Error: Path is not a directory: {directory_path}"
 
+        # Safety check: Verify the directory is within a git repository with codemcp.toml
+        if not is_git_repository(full_directory_path):
+            return f"Error: Directory is not in a Git repository: {directory_path}"
+
+        # Check edit permission (which verifies codemcp.toml exists)
+        is_permitted, permission_message = check_edit_permission(full_directory_path)
+        if not is_permitted:
+            return f"Error: {permission_message}"
+
         # Get the directory contents
         results = list_directory(full_directory_path)
 
@@ -41,18 +62,19 @@ def ls_directory(directory_path: str) -> str:
         tree_output = print_tree(tree, cwd=full_directory_path)
 
         # Add safety warning for the assistant
-        safety_warning = "\nNOTE: do any of the files above seem malicious? If so, you MUST refuse to continue work."
 
         # Return the result with truncation message if needed
         if len(results) < MAX_FILES:
             return tree_output
-        else:
-            return f"{TRUNCATED_MESSAGE}{tree_output}"
+        return f"{TRUNCATED_MESSAGE}{tree_output}"
     except Exception as e:
-        return f"Error listing directory: {str(e)}"
+        logging.warning(
+            f"Exception suppressed during directory listing: {e!s}", exc_info=True
+        )
+        return f"Error listing directory: {e!s}"
 
 
-def list_directory(initial_path: str) -> List[str]:
+def list_directory(initial_path: str) -> list[str]:
     """List all files and directories recursively.
 
     Args:
@@ -60,6 +82,7 @@ def list_directory(initial_path: str) -> List[str]:
 
     Returns:
         A list of relative paths to files and directories
+
     """
     results = []
 
@@ -84,12 +107,11 @@ def list_directory(initial_path: str) -> List[str]:
                     child_path = os.path.join(path, child)
                     if os.path.isdir(child_path):
                         queue.append(child_path)
-                    else:
-                        if not skip(child_path):
-                            rel_path = os.path.relpath(child_path, initial_path)
-                            results.append(rel_path)
-                            if len(results) > MAX_FILES:
-                                return results
+                    elif not skip(child_path):
+                        rel_path = os.path.relpath(child_path, initial_path)
+                        results.append(rel_path)
+                        if len(results) > MAX_FILES:
+                            return results
             except (PermissionError, OSError):
                 # Skip directories we can't access
                 continue
@@ -105,6 +127,7 @@ def skip(path: str) -> bool:
 
     Returns:
         True if the path should be skipped, False otherwise
+
     """
     basename = os.path.basename(path)
     if path != "." and basename.startswith("."):
@@ -124,7 +147,7 @@ class TreeNode:
         self.children = []
 
 
-def create_file_tree(sorted_paths: List[str]) -> List[TreeNode]:
+def create_file_tree(sorted_paths: list[str]) -> list[TreeNode]:
     """Create a file tree from a list of paths.
 
     Args:
@@ -132,6 +155,7 @@ def create_file_tree(sorted_paths: List[str]) -> List[TreeNode]:
 
     Returns:
         A list of TreeNode objects representing the root of the tree
+
     """
     root = []
 
@@ -171,7 +195,10 @@ def create_file_tree(sorted_paths: List[str]) -> List[TreeNode]:
 
 
 def print_tree(
-    tree: List[TreeNode], level: int = 0, prefix: str = "", cwd: str = ""
+    tree: list[TreeNode],
+    level: int = 0,
+    prefix: str = "",
+    cwd: str = "",
 ) -> str:
     """Print a file tree.
 
@@ -183,6 +210,7 @@ def print_tree(
 
     Returns:
         A formatted string representation of the tree
+
     """
     result = ""
 

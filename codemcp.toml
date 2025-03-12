@@ -1,3 +1,11 @@
-global_prompt = """
+project_prompt = """
 Before beginning work on this feature, write a short haiku.  Do this only once.
+When you are done with your task, run format and lint commands.
 """
+
+[commands]
+format = ["./run_format.sh"]
+lint = ["./run_lint.sh"]
+[commands.test]
+command = ["./run_test.sh"]
+doc = "Accepts a pytest-style test selector as an argument to run a specific test."

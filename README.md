@@ -1,120 +1,140 @@
 # codemcp
 
-A multi-purpose MCP for coding with Claude Sonnet.  It is specifically
-intended to be used with Claude Desktop, where you can purchase Claude Pro and
-pay only a flat monthly fee for as much usage up to Anthropic's rate limit, as
-opposed to potentially uncapped cost from API usage.
+Make Claude Desktop a pair programming assistant by installing codemcp.  With
+it, you can directly ask Claude to implement features, fix bugs and do
+refactors on a codebase on your computer; Claude will directly edit files and
+run tests.  Say goodbye to copying code in and out of Claude's chat window!
 
-Currently, this MCP only provides the ability to directly read/write files on
-your filesystem, based off of Claude Code's tools.  However, it takes an
-opinionated approach to implementing this functionality based on the coding
-use case:
+![Screenshot of Claude Desktop with codemcp](static/screenshot.png?raw=true)
 
-- Git is mandatory; we generate a commit for every edit so you can easily use
-  Git to rollback if the AI does something bad.  The MCP will ONLY write
-  to Git tracked files, so you are guaranteed to be able to rollback if
-  necessary.
+codemcp offers similar functionality to other AI coding software (Claude Code,
+Cursor, Cline, Aider), but it occupies a unique point in the design space:
 
-- You must specifically opt-in a repository to being editable with codemcp by
-  creating a codemcp.toml file at its base directory.  We will refuse to write
-  all other files.
+1. It's intended to be used with Claude Pro, Anthropic's $20/mo subscription
+   offering.  **Say goodbye to giant API bills**.  (Say hello to time-based rate
+   limits.)
 
-Major missing functionality that I plan to implement ASAP:
+2. It's built around **safe agentic AI** by providing a limited set of tools
+   that helpful, honest and harmless LLMs are unlikely to misuse, and enforcing
+   best practices like use of Git version control to ensure all code changes
+   can be rolled back.  As a result, you can safely **unleash the AI** and
+   only evaluate at the end if you want to accept the changes or not.
 
-- Improve the system prompt
+3. It's **IDE agnostic**: you ask Claude to make changes, it makes them, and
+   then you can use your favorite IDE setup to review the changes and make
+   further edits.
 
-- Linter/autoformatter integration
+## Getting started
 
-- Typecheck/build integration
+First, [Install uv](https://docs.astral.sh/uv/getting-started/installation/).
 
-- Test runner integration
-
-- Scrape webpage and add to context
-
-- A few more of Claude Code's tools: glob, memory, notebook
-
-Things I NEVER intend to implement, for philosophical reasons:
-
-- Bash tool (instead, I want you to explicitly whitelist commands that are OK
-  for the agent to run)
-
-- Recursive LLM calls (I'd like to support this, but I think there's no way to
-  do this without doing API calls, and I'm not that interested in adding API
-  support)
-
-This tool was bootstrapped into developing itself in three hours.  I'm still
-working out Sonnet 3.7's quirks for Python projects, so apologies for any
-naughty code.
-
-## Installation
-
-From source:
-
-```bash
-uv venv
-source .venv/bin/activate
-uv sync
-```
-
-and then in `claude_desktop_config.json`
+Then, in `claude_desktop_config.json`
 
 ```json
 {
   "mcpServers": {
     "codemcp": {
-      "command": "/Users/ezyang/Dev/codemcp/.venv/bin/python",
+      "command": "uvx",
       "args": [
-        "-m",
-        "codemcp"
+        "--from",
+        "git+https://github.com/ezyang/codemcp@prod",
+        "codemcp",
       ]
     }
   }
 }
 ```
 
-TODO: uvx instructions
-
-There is a pypi package but it is out of date until we get out of rapid
-development, install from source for now.
-
 ## Usage
 
-Create a project and put this in your system prompt:
+First, you must create a `codemcp.toml` file in the Git repository checkout
+you want to work on.  If you want the agent to be able to do things like run
+your formatter or run tests, add the commands to execute them in the commands
+section (note: these commands need to appropriately setup any virtual
+environment they need):
+
+```toml
+format = ["./run_format.sh"]
+test = ["./run_test.sh"]
+```
+
+Next, in Claude Desktop, we recommend creating a Project and putting this in
+the Project Instructions:
 
 ```
-Before doing anything, first init project PATH_TO_PROJECT.
+Before doing anything, first init project $PROJECT_DIR.
 ```
+
+Where `$PROJECT_DIR` is the path to the project you want to work on.
 
 Then chat with Claude about what changes you want to make to the project.
+Every time codemcp makes a change to your code, it will generate a commit.
+
+To see some sample transcripts using this tool, check out:
+
+- [Implement a new feature](https://claude.ai/share/a229d291-6800-4cb8-a0df-896a47602ca0)
+- [Fix failing tests](https://claude.ai/share/2b7161ef-5683-4261-ad45-fabc3708f950)
+- [Do a refactor](https://claude.ai/share/f005b43c-a657-43e5-ad9f-4714a5cd746f)
+
+We recommend having the repository that codemcp is operating be a distinct
+branch from the default branch.  Suppose that codemcp is operating on
+`develop` and the default branch is `main`, here are some useful commands:
+
+- View a diff of LLM edits: `git diff main`
+- Reject LLM changes: `git reset --keep main`
+- Accept LLM changes: `git fetch . develop:main`
+  - If you want to squash the commits, run `git rebase -i` and squash before
+    you run the fetch
+  - If you want to preserve the intermediate commits, checkout `main` and then
+    run `git merge develop --no-ff`
+
+## Philosophy
+
+- When you get rate limited, take the time to do something else (review
+  Claude's code, review someone else's code, make plans, do some meetings)
+
+- This is *not* an autonomous agent.  At minimum, you have to intervene after
+  every chat to review the changes and request the next change.  While you
+  *can* ask for a long list of things to be done in a single chat, you will
+  likely hit Claude Desktop's output limit and have to manually "continue" the
+  agent anyway.  Embrace it, and use the interruptions to make sure Claude is
+  doing the right thing.
+
+- When Claude goes off the rails, it costs you time rather than dollars.
+  Behave accordingly: if time is the bottleneck, watch Claude's incremental
+  output carefully.
 
 ## Configuration
 
-codemcp uses a TOML configuration file located at `~/.codemcprc`. Currently supported configuration options:
+Here are all the config options supported by `codemcp.toml`:
+
+```toml
+project_prompt = """
+Before beginning work on this feature, write a short haiku.  Do this only once.
+"""
+
+[commands]
+format = ["./run_format.sh"]
+test = ["./run_test.sh"]
+```
+
+The `project_prompt` will be loaded when you initialize the project in chats.
+
+The `commands` section allows you to configure commands for specific tools:
+- `format`: used to format code according to project standards.  Formatting is
+  done at the very end of a task.
+- `test`: used to run tests.  The test script should accept an argument which
+  will be passed as is to the underlying test framework.
+
+## Troubleshooting
+
+Logs are written to `~/.codemcp/codemcp.log`. The log level can be set in a global configuration file at `~/.codemcprc`:
 
 ```toml
 [logger]
 verbosity = "INFO"  # Can be DEBUG, INFO, WARNING, ERROR, or CRITICAL
 ```
 
-In your repository, there is also a config file `codemcp.toml`.
-
-```
-global_prompt = """
-Before beginning work on this feature, write a short haiku.  Do this only once.
-"""
-```
-
-This prompt will be loaded when you initialize the project in chats.
-
-## Logging
-
-Logs are written to `~/.codemcp/codemcp.log`. The log level can be set in the configuration file or overridden with environment variables:
-
-- Set the log level in config: `verbosity = "DEBUG"` in `~/.codemcprc`
-
-## Known problems
-
-- Thinking mode doesn't work too well
-- Sonnet 3.7 will try very hard to execute commands, which doesn't work
-- You can't do an edit that is larger than Claude Desktop's output size limit.
-  If you do hit a limit try "Continue" first.
+Logging is not configurable on a per project basis, but this shouldn't matter
+much because it's difficult to use Claude Desktop in parallel on multiple
+projects anyway.

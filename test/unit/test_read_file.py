@@ -4,7 +4,7 @@ import os
 import re
 import tempfile
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from expecttest import TestCase
 
@@ -26,7 +26,8 @@ class TestReadFile(TestCase):
 
         # Create a file with long lines
         self.long_line_file_path = os.path.join(
-            self.temp_dir.name, "long_line_file.txt"
+            self.temp_dir.name,
+            "long_line_file.txt",
         )
         with open(self.long_line_file_path, "w") as f:
             f.write("Short line\n")
@@ -38,24 +39,24 @@ class TestReadFile(TestCase):
         with open(self.large_file_path, "w") as f:
             for i in range(1, MAX_LINES_TO_READ + 100):
                 f.write(f"Line {i}\n")
-                
+
         # Setup mock patches
         self.setup_mocks()
-        
+
     def setup_mocks(self):
         """Setup mocks for git functions to bypass repository checks"""
         # Create patch for git repository check
-        self.is_git_repo_patch = patch('codemcp.git.is_git_repository')
+        self.is_git_repo_patch = patch("codemcp.git.is_git_repository")
         self.mock_is_git_repo = self.is_git_repo_patch.start()
         self.mock_is_git_repo.return_value = True
         self.addCleanup(self.is_git_repo_patch.stop)
-        
+
         # Create patch for git base directory
-        self.git_base_dir_patch = patch('codemcp.access.get_git_base_dir')
+        self.git_base_dir_patch = patch("codemcp.access.get_git_base_dir")
         self.mock_git_base_dir = self.git_base_dir_patch.start()
         self.mock_git_base_dir.return_value = self.temp_dir.name
         self.addCleanup(self.git_base_dir_patch.stop)
-        
+
         # Create a mock codemcp.toml file to satisfy permission check
         config_path = os.path.join(self.temp_dir.name, "codemcp.toml")
         with open(config_path, "w") as f:
@@ -1324,14 +1325,16 @@ class TestReadFile(TestCase):
         test_string = f"Error: File does not exist: {self.temp_dir.name}/some/path.txt"
         normalized = self.normalize_result(test_string)
         self.assertEqual(
-            normalized, "Error: File does not exist: /tmp/test_dir/some/path.txt"
+            normalized,
+            "Error: File does not exist: /tmp/test_dir/some/path.txt",
         )
 
         # Test with multiple occurrences of the temp dir
         test_string = f"Path1: {self.temp_dir.name}/file1.txt, Path2: {self.temp_dir.name}/file2.txt"
         normalized = self.normalize_result(test_string)
         self.assertEqual(
-            normalized, "Path1: /tmp/test_dir/file1.txt, Path2: /tmp/test_dir/file2.txt"
+            normalized,
+            "Path1: /tmp/test_dir/file1.txt, Path2: /tmp/test_dir/file2.txt",
         )
 
         # Test with a string that doesn't contain the temp dir

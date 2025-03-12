@@ -3,9 +3,15 @@
 import logging
 import os
 import subprocess
-from typing import Tuple
 
 from .common import normalize_file_path
+from .shell import run_command
+
+__all__ = [
+    "is_git_repository",
+    "commit_pending_changes",
+    "commit_changes",
+]
 
 
 def is_git_repository(path: str) -> bool:
@@ -16,31 +22,46 @@ def is_git_repository(path: str) -> bool:
 
     Returns:
         True if path is in a Git repository, False otherwise
+
     """
     try:
-        # Get the directory containing the file
+        # Get the directory containing the file or use the path itself if it's a directory
         directory = os.path.dirname(path) if os.path.isfile(path) else path
 
+        # Get the absolute path to ensure consistency
+        directory = os.path.abspath(directory)
+
         # Run git command to verify this is a git repository
-        result = subprocess.run(
+        run_command(
             ["git", "rev-parse", "--is-inside-work-tree"],
             cwd=directory,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
             check=True,
+            capture_output=True,
             text=True,
         )
-        # Log command output instead of sending to stdout
-        if result.stdout:
-            logging.debug("git rev-parse output: %s", result.stdout.strip())
-        if result.stderr:
-            logging.debug("git rev-parse stderr: %s", result.stderr.strip())
-        return True
+
+        # Also get the repository root to use for all git operations
+        try:
+            run_command(
+                ["git", "rev-parse", "--show-toplevel"],
+                cwd=directory,
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+
+            # Store the repository root in a global or class variable if needed
+            # This could be used to ensure all git operations use the same root
+
+            return True
+        except (subprocess.SubprocessError, OSError):
+            # If we can't get the repo root, it's not a proper git repository
+            return False
     except (subprocess.SubprocessError, OSError):
         return False
 
 
-def commit_pending_changes(file_path: str) -> Tuple[bool, str]:
+def commit_pending_changes(file_path: str) -> tuple[bool, str]:
     """Commit any pending changes in the repository, excluding the target file.
 
     Args:
@@ -48,6 +69,7 @@ def commit_pending_changes(file_path: str) -> Tuple[bool, str]:
 
     Returns:
         A tuple of (success, message)
+
     """
     try:
         # First, check if this is a git repository
@@ -57,41 +79,31 @@ def commit_pending_changes(file_path: str) -> Tuple[bool, str]:
         directory = os.path.dirname(file_path)
 
         # Check if the file is tracked by git
-        file_status = subprocess.run(
+        file_status = run_command(
             ["git", "ls-files", "--error-unmatch", file_path],
             cwd=directory,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             text=True,
+            check=False,
         )
 
-        # Log command output
-        if file_status.stdout:
-            logging.debug("git ls-files output: %s", file_status.stdout.strip())
-        if file_status.stderr:
-            logging.debug("git ls-files stderr: %s", file_status.stderr.strip())
-
         file_is_tracked = file_status.returncode == 0
-        
+
         # If the file is not tracked, return an error
         if not file_is_tracked:
-            return False, "File is not tracked by git. Please add the file to git tracking first using 'git add <file>'"
+            return (
+                False,
+                "File is not tracked by git. Please add the file to git tracking first using 'git add <file>'",
+            )
 
         # Check if working directory has uncommitted changes
-        status_result = subprocess.run(
+        status_result = run_command(
             ["git", "status", "--porcelain"],
             cwd=directory,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             check=True,
             text=True,
         )
-
-        # Log command output
-        if status_result.stdout:
-            logging.debug("git status output: %s", status_result.stdout.strip())
-        if status_result.stderr:
-            logging.debug("git status stderr: %s", status_result.stderr.strip())
 
         # If there are uncommitted changes (besides our target file), commit them first
         if status_result.stdout and file_is_tracked:
@@ -116,134 +128,142 @@ def commit_pending_changes(file_path: str) -> Tuple[bool, str]:
 
             if changed_files:
                 # Commit other changes first with a default message
-                add_result = subprocess.run(
+                run_command(
                     ["git", "add", "."],
                     cwd=directory,
                     check=True,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True
+                    capture_output=True,
+                    text=True,
                 )
 
-                # Log command output
-                if add_result.stdout:
-                    logging.debug("git add output: %s", add_result.stdout.strip())
-                if add_result.stderr:
-                    logging.debug("git add stderr: %s", add_result.stderr.strip())
-
-                commit_snapshot_result = subprocess.run(
+                run_command(
                     ["git", "commit", "-m", "Snapshot before codemcp change"],
                     cwd=directory,
                     check=True,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True
+                    capture_output=True,
+                    text=True,
                 )
-
-                # Log command output
-                if commit_snapshot_result.stdout:
-                    logging.debug("git commit snapshot output: %s", commit_snapshot_result.stdout.strip())
-                if commit_snapshot_result.stderr:
-                    logging.debug("git commit snapshot stderr: %s", commit_snapshot_result.stderr.strip())
 
                 return True, "Committed pending changes"
 
         return True, "No pending changes to commit"
     except Exception as e:
-        return False, f"Error committing pending changes: {str(e)}"
+        logging.warning(
+            f"Exception suppressed when committing pending changes: {e!s}",
+            exc_info=True,
+        )
+        return False, f"Error committing pending changes: {e!s}"
 
 
-def commit_changes(file_path: str, description: str) -> Tuple[bool, str]:
-    """Commit changes to a file in Git.
+def commit_changes(path: str, description: str) -> tuple[bool, str]:
+    """Commit changes to a file or directory in Git.
 
     Args:
-        file_path: The path to the file to commit
+        path: The path to the file or directory to commit
         description: Commit message describing the change
 
     Returns:
         A tuple of (success, message)
+
     """
     try:
         # First, check if this is a git repository
-        if not is_git_repository(file_path):
-            return False, "File is not in a Git repository"
+        if not is_git_repository(path):
+            return False, f"Path '{path}' is not in a Git repository"
 
-        directory = os.path.dirname(file_path)
+        # Get absolute paths for consistency
+        abs_path = os.path.abspath(path)
 
-        # Add the specified file
-        add_result = subprocess.run(
-            ["git", "add", file_path],
-            cwd=directory,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
+        # Get the directory - if path is a file, use its directory, otherwise use the path itself
+        directory = os.path.dirname(abs_path) if os.path.isfile(abs_path) else abs_path
 
-        # Log command output
-        if add_result.stdout:
-            logging.debug("git add file output: %s", add_result.stdout.strip())
-        if add_result.stderr:
-            logging.debug("git add file stderr: %s", add_result.stderr.strip())
+        # Try to get the git repository root for more reliable operations
+        try:
+            repo_root = run_command(
+                ["git", "rev-parse", "--show-toplevel"],
+                cwd=directory,
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+
+            # Use the repo root as the working directory for git commands
+            git_cwd = repo_root
+        except (subprocess.SubprocessError, OSError):
+            # Fall back to the directory if we can't get the repo root
+            git_cwd = directory
+
+        # If it's a file, check if it exists
+        if os.path.isfile(abs_path) and not os.path.exists(abs_path):
+            return False, f"File does not exist: {abs_path}"
+
+        # Add the path to git - could be a file or directory
+        try:
+            # If path is a directory, do git add .
+            add_command = (
+                ["git", "add", "."]
+                if os.path.isdir(abs_path)
+                else ["git", "add", abs_path]
+            )
+
+            add_result = run_command(
+                add_command,
+                cwd=git_cwd,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except Exception as e:
+            return False, f"Failed to add to Git: {str(e)}"
 
         if add_result.returncode != 0:
-            return False, f"Failed to add file to Git: {add_result.stderr}"
+            return False, f"Failed to add to Git: {add_result.stderr}"
 
         # First check if there's already a commit in the repository
         has_commits = False
-        rev_parse_result = subprocess.run(
+        rev_parse_result = run_command(
             ["git", "rev-parse", "--verify", "HEAD"],
-            cwd=directory,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            cwd=git_cwd,
+            capture_output=True,
             text=True,
+            check=False,
         )
-
-        # Log command output
-        if rev_parse_result.stdout:
-            logging.debug("git rev-parse HEAD output: %s", rev_parse_result.stdout.strip())
-        if rev_parse_result.stderr:
-            logging.debug("git rev-parse HEAD stderr: %s", rev_parse_result.stderr.strip())
 
         has_commits = rev_parse_result.returncode == 0
 
-        # Only check for changes if we already have commits
+        # Check if there are any staged changes to commit
         if has_commits:
             # Check if there are any changes to commit after git add
-            # Using git diff-index HEAD to check for staged changes against HEAD
-            diff_result = subprocess.run(
-                ["git", "diff-index", "--cached", "--quiet", "HEAD", "--", file_path],
-                cwd=directory,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+            diff_result = run_command(
+                ["git", "diff-index", "--cached", "--quiet", "HEAD"],
+                cwd=git_cwd,
+                capture_output=True,
                 text=True,
+                check=False,
             )
 
-            # Log command output (only stderr since stdout would be empty with --quiet flag)
-            if diff_result.stderr:
-                logging.debug("git diff-index stderr: %s", diff_result.stderr.strip())
-
-            # If diff-index returns 0, there are no changes to commit for this file
+            # If diff-index returns 0, there are no changes to commit
             if diff_result.returncode == 0:
-                return True, "No changes to commit (file is identical to what's already committed)"
+                return (
+                    True,
+                    "No changes to commit (changes already committed or no changes detected)",
+                )
 
         # Commit the change
-        commit_result = subprocess.run(
+        commit_result = run_command(
             ["git", "commit", "-m", description],
-            cwd=directory,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            cwd=git_cwd,
+            capture_output=True,
             text=True,
+            check=False,
         )
-
-        # Log command output
-        if commit_result.stdout:
-            logging.debug("git commit output: %s", commit_result.stdout.strip())
-        if commit_result.stderr:
-            logging.debug("git commit stderr: %s", commit_result.stderr.strip())
 
         if commit_result.returncode != 0:
             return False, f"Failed to commit changes: {commit_result.stderr}"
 
         return True, "Changes committed successfully"
     except Exception as e:
-        return False, f"Error committing changes: {str(e)}"
+        logging.warning(
+            f"Exception suppressed when committing changes: {e!s}", exc_info=True
+        )
+        return False, f"Error committing changes: {e!s}"

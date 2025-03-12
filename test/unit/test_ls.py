@@ -4,7 +4,7 @@ import os
 import re
 import tempfile
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from expecttest import TestCase
 
@@ -51,31 +51,37 @@ class TestLS(TestCase):
         self.hidden_file_path = os.path.join(self.test_dir, ".hidden_file")
         with open(self.hidden_file_path, "w") as f:
             f.write("This is a hidden file\n")
-            
+
         # Create a __pycache__ directory
         self.pycache_dir = os.path.join(self.test_dir, "__pycache__")
         os.makedirs(self.pycache_dir, exist_ok=True)
         self.pycache_file_path = os.path.join(self.pycache_dir, "cache_file.pyc")
         with open(self.pycache_file_path, "w") as f:
             f.write("This is a cache file\n")
-            
+
         # Setup mock patches
         self.setup_mocks()
-        
+
     def setup_mocks(self):
         """Setup mocks for git functions to bypass repository checks"""
         # Create patch for git repository check
-        self.is_git_repo_patch = patch('codemcp.git.is_git_repository')
+        self.is_git_repo_patch = patch("codemcp.git.is_git_repository")
         self.mock_is_git_repo = self.is_git_repo_patch.start()
         self.mock_is_git_repo.return_value = True
         self.addCleanup(self.is_git_repo_patch.stop)
-        
+
         # Create patch for git base directory
-        self.git_base_dir_patch = patch('codemcp.access.get_git_base_dir')
+        self.git_base_dir_patch = patch("codemcp.access.get_git_base_dir")
         self.mock_git_base_dir = self.git_base_dir_patch.start()
         self.mock_git_base_dir.return_value = self.temp_dir.name
         self.addCleanup(self.git_base_dir_patch.stop)
-        
+
+        # Create patch for check_edit_permission
+        self.check_edit_permission_patch = patch("codemcp.access.check_edit_permission")
+        self.mock_check_edit_permission = self.check_edit_permission_patch.start()
+        self.mock_check_edit_permission.return_value = (True, "Permission granted.")
+        self.addCleanup(self.check_edit_permission_patch.stop)
+
         # Create a mock codemcp.toml file to satisfy permission check
         config_path = os.path.join(self.temp_dir.name, "codemcp.toml")
         with open(config_path, "w") as f:
@@ -94,28 +100,50 @@ class TestLS(TestCase):
 
     def test_ls_directory_basic(self):
         """Test basic directory listing functionality"""
-        result = ls_directory(self.test_dir)
-        normalized_result = self.normalize_result(result)
+        # Mock the is_git_repository and check_edit_permission functions directly in the ls module
+        with (
+            patch("codemcp.tools.ls.is_git_repository", return_value=True),
+            patch(
+                "codemcp.tools.ls.check_edit_permission",
+                return_value=(True, "Permission granted."),
+            ),
+        ):
+            result = ls_directory(self.test_dir)
+            normalized_result = self.normalize_result(result)
 
-        # Check that the output contains the expected files and directories
-        self.assertIn("file1.txt", normalized_result)
-        self.assertIn("file2.txt", normalized_result)
-        self.assertIn("subdir", normalized_result)
+            # Check that the output contains the expected files and directories
+            self.assertIn("file1.txt", normalized_result)
+            self.assertIn("file2.txt", normalized_result)
+            self.assertIn("subdir", normalized_result)
 
-        # Check that hidden files and __pycache__ are excluded
-        self.assertNotIn(".hidden_file", normalized_result)
-        self.assertNotIn("__pycache__", normalized_result)
+            # Check that hidden files and __pycache__ are excluded
+            self.assertNotIn(".hidden_file", normalized_result)
+            self.assertNotIn("__pycache__", normalized_result)
 
     def test_ls_directory_nonexistent(self):
         """Test listing a nonexistent directory"""
-        nonexistent_dir = os.path.join(self.temp_dir.name, "nonexistent")
-        result = ls_directory(nonexistent_dir)
-        self.assertIn("Error: Directory does not exist", result)
+        with (
+            patch("codemcp.tools.ls.is_git_repository", return_value=True),
+            patch(
+                "codemcp.tools.ls.check_edit_permission",
+                return_value=(True, "Permission granted."),
+            ),
+        ):
+            nonexistent_dir = os.path.join(self.temp_dir.name, "nonexistent")
+            result = ls_directory(nonexistent_dir)
+            self.assertIn("Error: Directory does not exist", result)
 
     def test_ls_directory_file(self):
         """Test listing a file instead of a directory"""
-        result = ls_directory(self.file1_path)
-        self.assertIn("Error: Path is not a directory", result)
+        with (
+            patch("codemcp.tools.ls.is_git_repository", return_value=True),
+            patch(
+                "codemcp.tools.ls.check_edit_permission",
+                return_value=(True, "Permission granted."),
+            ),
+        ):
+            result = ls_directory(self.file1_path)
+            self.assertIn("Error: Path is not a directory", result)
 
     def test_list_directory(self):
         """Test the list_directory function"""
@@ -140,7 +168,7 @@ class TestLS(TestCase):
         """Test the skip function for filtering paths"""
         # Test skipping hidden files
         self.assertTrue(skip(".hidden_file"))
-        
+
         # Test skipping __pycache__
         self.assertTrue(skip("__pycache__"))
         self.assertTrue(skip("__pycache__/file.pyc"))
@@ -160,9 +188,9 @@ class TestLS(TestCase):
         # List the directory with default MAX_FILES
         results = list_directory(many_files_dir)
 
-        # Check that the number of files is limited to MAX_FILES+1 
+        # Check that the number of files is limited to MAX_FILES+1
         # (since it will include one more than MAX_FILES due to the check in the loop)
-        self.assertLessEqual(len(results), MAX_FILES+1)
+        self.assertLessEqual(len(results), MAX_FILES + 1)
 
     def test_create_file_tree(self):
         """Test creating a file tree"""
@@ -170,28 +198,28 @@ class TestLS(TestCase):
         paths = list_directory(self.test_dir)
         # Create the tree
         tree_nodes = create_file_tree(paths)
-        
+
         # Check that we have the expected number of nodes at the root level
         # We expect to have at least file1.txt, file2.txt, and subdir
         self.assertGreaterEqual(len(tree_nodes), 3)
-        
+
         # Find the subdir node
         subdir_node = None
         for node in tree_nodes:
             if node.name == "subdir":
                 subdir_node = node
                 break
-                
+
         # If subdir node wasn't found in the root level, it might be because
         # we're checking the wrong node name - print all node names to debug
         if subdir_node is None:
             node_names = [node.name for node in tree_nodes]
             print(f"DEBUG: Available node names at root level: {node_names}")
-        
+
         # Check that the subdir node exists and has the correct type
         self.assertIsNotNone(subdir_node)
         self.assertEqual(subdir_node.type, "directory")
-        
+
         # Check that the subdir has a child (subdir_file.txt)
         has_subfile = False
         for child in subdir_node.children:
@@ -199,7 +227,7 @@ class TestLS(TestCase):
                 has_subfile = True
                 self.assertEqual(child.type, "file")
                 break
-        
+
         self.assertTrue(has_subfile)
 
     def test_print_tree(self):
