@@ -24,6 +24,7 @@ dev = [
 
 [project.scripts]
 codemcp = "codemcp:run"
+codemcp-multi = "codemcp.multi_entry:main"
 
 [build-system]
 requires = ["hatchling"]
