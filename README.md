@@ -44,6 +44,11 @@ Then, in `claude_desktop_config.json`
   }
 }
 ```
+Note, if you get an error like "MCP codemcp: spawn uvx ENOENT" on MacOS, then you most likely need to the absolute path to uvx. For example 
+```
+/Users/<your local username>/.local/bin/uvx
+```
+instead of just uvx
 
 ## Usage
 
