@@ -618,6 +618,7 @@ async def edit_file_content(
     read_file_timestamps: dict[str, float] | None = None,
     description: str = "",
     chat_id: str = None,
+    force_commit: bool = False,
 ) -> str:
     """Edit a file by replacing old_string with new_string.
 
@@ -633,6 +634,7 @@ async def edit_file_content(
         read_file_timestamps: Dictionary mapping file paths to timestamps when they were last read
         description: Short description of the change
         chat_id: The unique ID of the current chat session
+        force_commit: Whether to force committing changes, ignoring auto_commit setting
 
     Returns:
         A success message or an error message
@@ -641,6 +643,10 @@ async def edit_file_content(
         This function allows creating new files when old_string is empty and the file doesn't exist.
         For existing files, it will reject attempts to edit files that are not tracked by git.
         Files must be tracked in the git repository before they can be modified.
+        
+        By default, this function follows the auto_commit configuration to determine
+        whether changes should be automatically committed. Set force_commit=True to
+        override this behavior and always commit.
 
     """
     try:
@@ -690,14 +696,17 @@ async def edit_file_content(
 
             # Commit the changes
             success, message = await commit_changes(
-                full_file_path, description, chat_id
+                full_file_path, description, chat_id, force_commit=force_commit
             )
             git_message = ""
             if success:
-                git_message = f"\nChanges committed to git: {description}"
-                # Include any extra details like previous commit hash if present in the message
-                if "previous commit was" in message:
+                if "not committed" in message:
                     git_message = f"\n{message}"
+                else:
+                    git_message = f"\nChanges committed to git: {description}"
+                    # Include any extra details like previous commit hash if present in the message
+                    if "previous commit was" in message:
+                        git_message = f"\n{message}"
             else:
                 git_message = f"\nFailed to commit changes to git: {message}"
 
@@ -812,12 +821,15 @@ async def edit_file_content(
 
         # Commit the changes
         git_message = ""
-        success, message = await commit_changes(full_file_path, description, chat_id)
+        success, message = await commit_changes(full_file_path, description, chat_id, force_commit=force_commit)
         if success:
-            git_message = f"\n\nChanges committed to git: {description}"
-            # Include any extra details like previous commit hash if present in the message
-            if "previous commit was" in message:
+            if "not committed" in message:
                 git_message = f"\n\n{message}"
+            else:
+                git_message = f"\n\nChanges committed to git: {description}"
+                # Include any extra details like previous commit hash if present in the message
+                if "previous commit was" in message:
+                    git_message = f"\n\n{message}"
         else:
             git_message = f"\n\nFailed to commit changes to git: {message}"
 

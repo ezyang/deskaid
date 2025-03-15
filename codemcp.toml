@@ -7,3 +7,6 @@ project_prompt = '''
 [commands]
 format = ["./run_format.sh"]
 test = ["./run_test.sh"]
+
+[git]
+auto_commit = false

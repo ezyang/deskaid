@@ -111,14 +111,32 @@ Before beginning work on this feature, write a short haiku.  Do this only once.
 [commands]
 format = ["./run_format.sh"]
 test = ["./run_test.sh"]
+
+[git]
+auto_commit = false  # Set to false to disable automatic commits after file changes
 ```
 
 The `project_prompt` will be loaded when you initialize the project in chats.
 
-The `commands` section allows you to configure commands for specific tools.  The
-names are told to the LLM, who will decide when it wants to run them.  You can add
-instructions how to use tools in the `project_prompt`; we also support a more verbose
-syntax where you can give specific instructions on a tool-by-tool basis:
+The `commands` section allows you to configure commands for specific tools. The
+names are told to the LLM, who will decide when it wants to run them.
+
+The `git` section allows you to configure Git-related behavior:
+- `auto_commit`: When set to `false`, codemcp will no longer automatically commit changes 
+  after editing files. This allows you to review changes before manually committing them.
+  Defaults to `true` for backward compatibility.
+
+You can also control auto-commit behavior in the following ways (in order of precedence):
+1. Set the `CODEMCP_AUTO_COMMIT` environment variable to "true" or "false"
+2. Project-specific `codemcp.toml` setting (as shown above)
+3. User-wide setting in `~/.codemcprc`:
+   ```toml
+   [git]
+   auto_commit = false
+   ```
+
+We also support a more verbose syntax where you can give specific instructions on a 
+tool-by-tool basis:
 
 ```
 [commands.test]

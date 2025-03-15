@@ -4,6 +4,7 @@ import logging
 import os
 import subprocess
 
+from .config import get_auto_commit
 from .git_message import (
     append_metadata_to_message,
     update_commit_message_with_description,
@@ -180,6 +181,7 @@ async def commit_changes(
     allow_empty: bool = False,
     custom_message: str = None,
     commit_all: bool = False,
+    force_commit: bool = False,
 ) -> tuple[bool, str]:
     """Commit changes to a file, directory, or all files in Git.
 
@@ -193,6 +195,12 @@ async def commit_changes(
     If commit_all is True, all changes in the repository will be committed.
     When commit_all is True, path can be None.
 
+    The function respects the auto_commit configuration setting, which can be set in:
+    1. Environment variable CODEMCP_AUTO_COMMIT
+    2. Project's codemcp.toml file under [git] auto_commit = true/false
+    3. User's ~/.codemcprc file
+    Set force_commit=True to override this setting.
+
     Args:
         path: The path to the file or directory to commit (optional if commit_all is True)
         description: Commit message describing the change
@@ -200,18 +208,29 @@ async def commit_changes(
         allow_empty: Whether to allow empty commits (no changes)
         custom_message: Optional custom commit message (overrides description)
         commit_all: Whether to commit all changes in the repository
+        force_commit: Whether to force committing changes, ignoring auto_commit setting
 
     Returns:
         A tuple of (success, message)
 
     """
     log.debug(
-        "commit_changes(%s, %s, %s, commit_all=%s)",
+        "commit_changes(%s, %s, %s, commit_all=%s, force_commit=%s)",
         path,
         description,
         chat_id,
         commit_all,
+        force_commit,
     )
+    
+    # Check auto_commit setting based on project path
+    repo_path = path
+    if path and os.path.isfile(path):
+        repo_path = os.path.dirname(path)
+    
+    # Skip commit based on auto_commit setting, unless force_commit is True
+    if not force_commit and not get_auto_commit(repo_path):
+        return True, "Auto-commit is disabled. Changes were not committed."
     try:
         # Need either a path or commit_all=True
         if path is None and not commit_all:

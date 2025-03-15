@@ -84,7 +84,7 @@ def detect_repo_line_endings(directory: str) -> str:
 
 
 async def write_file_content(
-    file_path: str, content: str, description: str = "", chat_id: str = None
+    file_path: str, content: str, description: str = "", chat_id: str = None, force_commit: bool = False
 ) -> str:
     """Write content to a file.
 
@@ -93,6 +93,7 @@ async def write_file_content(
         content: The content to write to the file
         description: Short description of the change
         chat_id: The unique ID of the current chat session
+        force_commit: Whether to force committing changes, ignoring auto_commit setting
 
     Returns:
         A success message or an error message
@@ -101,6 +102,10 @@ async def write_file_content(
         This function allows creating new files that don't exist yet.
         For existing files, it will reject attempts to write to files that are not tracked by git.
         Files must be tracked in the git repository before they can be modified.
+        
+        By default, this function follows the auto_commit configuration to determine
+        whether changes should be automatically committed. Set force_commit=True to
+        override this behavior and always commit.
 
     """
     try:
@@ -131,9 +136,12 @@ async def write_file_content(
 
         # Commit the changes
         git_message = ""
-        success, message = await commit_changes(file_path, description, chat_id)
+        success, message = await commit_changes(file_path, description, chat_id, force_commit=force_commit)
         if success:
-            git_message = f"\nChanges committed to git: {description}"
+            if "not committed" in message:
+                git_message = f"\n{message}"
+            else:
+                git_message = f"\nChanges committed to git: {description}"
         else:
             git_message = f"\nFailed to commit changes to git: {message}"
 
