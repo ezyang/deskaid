@@ -3,7 +3,6 @@
 import logging
 import os
 import re
-import subprocess
 
 from .git_message import (
     update_commit_message_with_description,
@@ -66,24 +65,10 @@ async def create_commit_reference(
     # Get the directory - if path is a file, use its directory, otherwise use the path itself
     directory = os.path.dirname(abs_path) if os.path.isfile(abs_path) else abs_path
 
-    # Try to get the git repository root for more reliable operations
-    try:
-        repo_root = (
-            await run_command(
-                ["git", "rev-parse", "--show-toplevel"],
-                cwd=directory,
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-        ).stdout.strip()
+    # Get the git repository root for more reliable operations
+    from .git_query import get_repository_root
 
-        # Use the repo root as the working directory for git commands
-        git_cwd = repo_root
-    except (subprocess.SubprocessError, OSError) as e:
-        # Fall back to the directory if we can't get the repo root
-        git_cwd = directory
-        log.warning(f"Failed to get repository root, falling back to directory: {e}")
+    git_cwd = await get_repository_root(directory)
 
     # Create the tree object for the empty commit
     # Get the tree from HEAD or create a new empty tree if no HEAD exists
@@ -198,8 +183,6 @@ async def commit_changes(
         commit_all,
     )
     try:
-        # Determine working directory for git operations
-        working_dir = None
         # First, check if this is a git repository
         if not await is_git_repository(path):
             return False, f"Path '{path}' is not in a Git repository"
@@ -208,15 +191,16 @@ async def commit_changes(
         abs_path = os.path.abspath(path)
 
         # Get the directory - if path is a file, use its directory, otherwise use the path itself
-        working_dir = (
-            os.path.dirname(abs_path) if os.path.isfile(abs_path) else abs_path
-        )
+        directory = os.path.dirname(abs_path) if os.path.isfile(abs_path) else abs_path
 
         # If it's a file, check if it exists (only if not commit_all mode)
         if not commit_all and os.path.isfile(abs_path) and not os.path.exists(abs_path):
             return False, f"File does not exist: {abs_path}"
 
-        git_cwd = working_dir
+        # Get the git repository root for more reliable operations
+        from .git_query import get_repository_root
+
+        git_cwd = await get_repository_root(directory)
 
         # Handle commit_all mode
         if commit_all:
